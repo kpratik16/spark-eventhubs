@@ -38,6 +38,11 @@ class DfsBasedOffsetStore(
       "we only support to store offset in HDFS/ADLS when running Spark in non-local mode ")
   }
 
+  if (!SparkContext.getOrCreate().isLocal) {
+    require(directory.startsWith("hdfs://") || directory.startsWith("adl://"),
+      "we only support to store offset in HDFS/ADLS when running Spark in non-local mode ")
+  }
+
   var path: Path = _
   var backupPath: Path = _
   var checkpointFile: FileSystem = _
