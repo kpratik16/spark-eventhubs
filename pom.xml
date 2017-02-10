@@ -21,8 +21,8 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.microsoft.azure</groupId>
-  <artifactId>spark-streaming-eventhubs_2.10</artifactId>
-  <version>1.6.2</version>
+  <artifactId>spark-streaming-eventhubs_connector_2.10</artifactId>
+  <version>1.6.3-SNAPSHOT</version>
   <licenses>
     <license>
       <name>The Apache License, Version 2.0</name>
@@ -37,6 +37,10 @@
       <organizationUrl>http://www.microsoft.com</organizationUrl>
     </developer>
   </developers>
+  <modules>
+    <module>core</module>
+    <module>examples</module>
+  </modules>
   <scm>
      <connection>scm:git:git:/github.com/hdinsight/spark-eventhubs.git</connection>
      <developerConnection>scm:git:ssh://github.com/hdinsight/spark-eventhubs.git</developerConnection>
@@ -45,10 +49,10 @@
   <properties>
     <sbt.project.name>spark-streaming-eventhubs</sbt.project.name>
     <scala.binary.version>2.10</scala.binary.version>
-    <spark.version>1.6.2</spark.version>
+    <spark.version>1.6.3</spark.version>
     <github.global.server>github</github.global.server>
   </properties>
-  <packaging>jar</packaging>
+  <packaging>pom</packaging>
   <name>${project.groupId}:${project.artifactId}</name>
   <description>Azure Eventhubs Connector for Spark Streaming Applications</description>
   <url>https://github.com/hdinsight/spark-eventhubs</url>
@@ -62,7 +66,12 @@
     <dependency>
       <groupId>com.microsoft.azure</groupId>
       <artifactId>azure-eventhubs</artifactId>
-      <version>0.9.0</version>
+      <version>0.10.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.scalaj</groupId>
+      <artifactId>scalaj-http_${scala.binary.version}</artifactId>
+      <version>2.3.0</version>
     </dependency>
     <dependency>
       <groupId>org.apache.spark</groupId>
@@ -162,6 +171,32 @@
     <outputDirectory>target/scala-${scala.binary.version}/classes</outputDirectory>
     <testOutputDirectory>target/scala-${scala.binary.version}/test-classes</testOutputDirectory>
     <plugins>
+      <plugin>
+        <groupId>org.scalastyle</groupId>
+        <artifactId>scalastyle-maven-plugin</artifactId>
+        <version>0.8.0</version>
+        <configuration>
+          <verbose>false</verbose>
+          <failOnViolation>true</failOnViolation>
+          <includeTestSourceDirectory>true</includeTestSourceDirectory>
+          <failOnWarning>false</failOnWarning>
+          <sourceDirectories>
+            <dir>${basedir}/core/src/main/scala</dir>
+            <dir>${basedir}/examples/src/main/scala</dir>
+          </sourceDirectories>
+          <testSourceDirectory>${basedir}/core/src/test/scala</testSourceDirectory>
+          <configLocation>scalastyle-config.xml</configLocation>
+          <outputFile>${project.basedir}/scalastyle-output.xml</outputFile>
+          <outputEncoding>UTF-8</outputEncoding>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>check</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
       <plugin>
         <groupId>org.scala-tools</groupId>
         <artifactId>maven-scala-plugin</artifactId>
