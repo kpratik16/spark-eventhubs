@@ -76,7 +76,7 @@ object EventhubsToAzureSQLTable {
 
     import sqlContext.implicits._
 
-    import com.microsoft.spark.streaming.examples.common.DataFrameExtensions._
+    import com.microsoft.spark.streaming.examples.receiverdstream.common.DataFrameExtensions._
 
     eventHubsWindowedStream.map(m => EventContent(new String(m)))
       .foreachRDD { rdd => rdd.toDF().insertToAzureSql(sqlDatabaseConnectionString, sqlTableName) }
