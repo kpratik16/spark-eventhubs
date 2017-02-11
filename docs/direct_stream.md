@@ -1,45 +1,10 @@
-# spark-eventhubs
-This is the source code of Receiver based and DirectStreaming based Spark Streaming with Azure Eventhubs as flow control. 
-
-## Project References
-
-### Maven Dependency
-    <!-- https://mvnrepository.com/artifact/com.microsoft.azure/spark-streaming-eventhubs_2.10 -->
-    <dependency>
-        <groupId>com.microsoft.azure</groupId>
-        <artifactId>spark-streaming-eventhubs_2.10</artifactId>
-        <version>1.6.3</version>
-    </dependency>
-
-### SBT Dependency
-
-    // https://mvnrepository.com/artifact/com.microsoft.azure/spark-streaming-eventhubs_2.10
-    libraryDependencies += "com.microsoft.azure" % "spark-streaming-eventhubs_2.10" % "1.6.3"
-
-### Maven Central for other dependency co-ordinates
-
-https://mvnrepository.com/artifact/com.microsoft.azure/spark-streaming-eventhubs_2.10/1.6.3
-
-### Build Prerequisites
-
-In order to build and run the examples, you need to have:
-
-1. Java 1.8 SDK.
-2. Maven 3.x
-3. Scala 2.10
-
-### Build Command
-    mvn clean
-    mvn package
-This command builds and installs EventHubsReceiver jar to local maven cache. Subsequently you can build any Spark Streaming application that references this jar.
-
 ## Integrate Spark Streaming and EventHubs with Direct DStream
 
-In the latest version of Spark-EventHubs, we provide a brand-new approach to integrate Spark Streaming and EventHubs. Being different with the previous approach (Receiver-based), we directly fetch events from EventHubs in distributed Spark tasks which execute the user-defined functions instead of starting a dedicated Spark job to start receiver threads. We call this new approach `Direct DStream` as it is inspired by [the community effort on integrating Spark Streaming and Kafka](https://github.com/apache/spark/tree/master/external/kafka-0-10).
+In the latest version of our code base, we provide a brand-new approach to integrate Spark Streaming and EventHubs. Being different with the previous approach (Receiver-based), we directly fetch events from EventHubs in distributed Spark tasks which execute the user-defined functions instead of starting a dedicated Spark job to start receiver threads. We call this new approach `Direct DStream` as it is inspired by [the community effort on integrating Spark Streaming and Kafka](https://github.com/apache/spark/tree/master/external/kafka-0-10).
 
 ### Overview of Direct DStream
 
-The following figure shows the architecture of workflow of Direct-DStream-based Integration of Spark Streaming and EventHubs. ![Image of Workflow](docs/imgs/workflow_directstream.png).
+The following figure shows the architecture of workflow of Direct-DStream-based Integration of Spark Streaming and EventHubs. ![Image of Workflow](imgs/workflow_directstream.png).
 
 EventHubDirectDStream is a new type of input stream, which is one-one mapping with a EventHubs namespace and the partitions of the RDD generated in EventHubDirectDStream is one-one mapping to the EventHub partition.
 
@@ -68,7 +33,7 @@ val inputDirectStream = EventHubsUtils.createDirectStreams(ssc, "namespace1",
 
 While the names of the configuration entries are self-explainable, we would highlight the additional `eventhubs.maxRate`. This parameter regulates the maximum number of messages being processed in a single batch for every EventHub partition and it effectively prevent the job being hold due to the large number of messages being fetched at once.
 
-After getting a EventHubDirectDStream instance, you can apply whatever operation which are available to a ordinary DStream instance with it. We have several examples applications in our [example code base](https://github.com/hdinsight/spark-eventhubs/tree/1.x/examples)
+After getting a EventHubDirectDStream instance, you can apply whatever operation which are available to a ordinary DStream instance with it. We have several examples applications in our [example code base](https://github.com/hdinsight/spark-streaming-data-persistence-examples)
 
 ### Future Directions
 

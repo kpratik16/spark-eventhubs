@@ -22,7 +22,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.microsoft.azure</groupId>
   <artifactId>spark-streaming-eventhubs_connector_2.10</artifactId>
-  <version>1.6.3-SNAPSHOT</version>
+  <version>1.6.3</version>
   <licenses>
     <license>
       <name>The Apache License, Version 2.0</name>
