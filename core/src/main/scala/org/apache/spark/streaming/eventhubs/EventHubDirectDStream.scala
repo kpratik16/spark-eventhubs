@@ -19,6 +19,8 @@ package org.apache.spark.streaming.eventhubs
 
 import java.io.{IOException, ObjectInputStream}
 
+import com.microsoft.analytics.nrtmdsrestserviceclient.AuthenticationCertificateInfo
+
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
@@ -36,23 +38,24 @@ import org.apache.spark.streaming.scheduler.rate.RateEstimator
 import org.apache.spark.util.Utils
 
 /**
- * implementation of EventHub-based direct stream
- * @param _ssc the streaming context this stream belongs to
- * @param eventHubNameSpace the namespace of evenhub instances
- * @param progressDir the checkpoint directory path (we only support HDFS-based checkpoint
- *                      storage for now, so you have to prefix your path with hdfs://clustername/
- * @param eventhubsParams the parameters of your eventhub instances, format:
- *                    Map[eventhubinstanceName -> Map(parameterName -> parameterValue)
- */
+  * implementation of EventHub-based direct stream
+  * @param _ssc the streaming context this stream belongs to
+  * @param eventHubNameSpace the namespace of evenhub instances
+  * @param progressDir the checkpoint directory path (we only support HDFS-based checkpoint
+  *                      storage for now, so you have to prefix your path with hdfs://clustername/
+  * @param eventhubsParams the parameters of your eventhub instances, format:
+  *                    Map[eventhubinstanceName -> Map(parameterName -> parameterValue)
+  */
 private[eventhubs] class EventHubDirectDStream private[eventhubs] (
-    _ssc: StreamingContext,
-    private[eventhubs] val eventHubNameSpace: String,
-    progressDir: String,
-    eventhubsParams: Map[String, Map[String, String]],
-    eventhubReceiverCreator: (Map[String, String], Int, Long, EventHubsOffsetType, Int) =>
-      EventHubsClientWrapper = EventHubsClientWrapper.getEventHubReceiver,
-    eventhubClientCreator: (String, Map[String, Map[String, String]]) =>
-      EventHubClient = RestfulEventHubClient.getInstance)
+                                                                    _ssc: StreamingContext,
+                                                                    private[eventhubs] val eventHubNameSpace: String,
+                                                                    progressDir: String,
+                                                                    eventhubsParams: Map[String, Map[String, String]],
+                                                                    authCertInfo: AuthenticationCertificateInfo,
+                                                                    eventhubReceiverCreator: (Map[String, String], Int, Long, EventHubsOffsetType, Int) =>
+                                                                      EventHubsClientWrapper = EventHubsClientWrapper.getEventHubReceiver,
+                                                                    eventhubClientCreator: (String, Map[String, Map[String, String]], AuthenticationCertificateInfo) =>
+                                                                      EventHubClient = RestfulEventHubClient.getInstance)
   extends InputDStream[EventData](_ssc) with Logging {
 
   private[streaming] override def name: String = s"EventHub direct stream [$id]"
@@ -68,7 +71,7 @@ private[eventhubs] class EventHubDirectDStream private[eventhubs] (
   private[eventhubs] val eventhubNameAndPartitions = {
     for (eventHubName <- eventhubsParams.keySet;
          partitionId <- 0 until eventhubsParams(eventHubName)(
-      "eventhubs.partition.count").toInt) yield EventHubNameAndPartition(eventHubName, partitionId)
+           "eventhubs.partition.count").toInt) yield EventHubNameAndPartition(eventHubName, partitionId)
   }
 
   override protected[streaming] val rateController: Option[RateController] = {
@@ -95,20 +98,21 @@ private[eventhubs] class EventHubDirectDStream private[eventhubs] (
   private def progressTracker = ProgressTracker.getInstance
 
   private[eventhubs] def setEventHubClient(eventHubClient: EventHubClient):
-      EventHubDirectDStream = {
+  EventHubDirectDStream = {
     _eventHubClient = eventHubClient
     this
   }
 
   private[eventhubs] def eventHubClient = {
     if (_eventHubClient == null) {
-      _eventHubClient = eventhubClientCreator(eventHubNameSpace, eventhubsParams)
+      _eventHubClient = eventhubClientCreator(eventHubNameSpace, eventhubsParams, authCertInfo)
     }
     _eventHubClient
   }
 
   private[eventhubs] var currentOffsetsAndSeqNums = OffsetRecord(Time(-1),
-    {eventhubNameAndPartitions.map{ehNameAndSpace => (ehNameAndSpace, (-1L, -1L))}.toMap})
+    {eventhubNameAndPartitions.map{ehNameAndSpace => (ehNameAndSpace, (-1L,
+      -1L))}.toMap})
   private[eventhubs] var fetchedHighestOffsetsAndSeqNums: OffsetRecord = _
 
   override def start(): Unit = {
@@ -140,7 +144,7 @@ private[eventhubs] class EventHubDirectDStream private[eventhubs] (
   }
 
   private def fetchLatestOffset(validTime: Time, retryIfFail: Boolean):
-      Option[Map[EventHubNameAndPartition, (Long, Long)]] = {
+  Option[Map[EventHubNameAndPartition, (Long, Long)]] = {
     // check if there is any eventhubs partition which potentially has newly arrived message (
     // the fetched highest message id is within the next batch's processing engine)
     val demandingEhNameAndPartitions = collectPartitionsNeedingLargerProcessingRange()
@@ -160,16 +164,16 @@ private[eventhubs] class EventHubDirectDStream private[eventhubs] (
   }
 
   /**
-   * EventHub uses *Number Of Messages* for rate control, but uses *offset* to setup of the start
-   * point of the receivers. As a result, we need to translate the sequence number to offset to
-   * start receiver in the next batch, which is a functionality not provided by EventHub. We use
-   * checkpoint file to communicate this information between executors and driver.
-   *
-   * In this function, we either read startpoint from checkpoint file or start processing from
-   * the very beginning of the streams
-   *
-   * @return EventHubName-Partition -> (offset, seq)
-   */
+    * EventHub uses *Number Of Messages* for rate control, but uses *offset* to setup of the start
+    * point of the receivers. As a result, we need to translate the sequence number to offset to
+    * start receiver in the next batch, which is a functionality not provided by EventHub. We use
+    * checkpoint file to communicate this information between executors and driver.
+    *
+    * In this function, we either read startpoint from checkpoint file or start processing from
+    * the very beginning of the streams
+    *
+    * @return EventHubName-Partition -> (offset, seq)
+    */
   private def fetchStartOffsetForEachPartition(validTime: Time, fallBack: Boolean): OffsetRecord = {
     val offsetRecord = progressTracker.read(eventHubNameSpace, validTime.milliseconds,
       ssc.graph.batchDuration.milliseconds, fallBack)
@@ -195,8 +199,8 @@ private[eventhubs] class EventHubDirectDStream private[eventhubs] (
   }
 
   private def validatePartitions(
-      validTime: Time,
-      calculatedPartitions: List[EventHubNameAndPartition]): Unit = {
+                                  validTime: Time,
+                                  calculatedPartitions: List[EventHubNameAndPartition]): Unit = {
     if (currentOffsetsAndSeqNums != null) {
       val currentPartitions = currentOffsetsAndSeqNums.offsets.keys.toList
       val diff = currentPartitions.diff(calculatedPartitions)
@@ -208,14 +212,14 @@ private[eventhubs] class EventHubDirectDStream private[eventhubs] (
   }
 
   /**
-   * return the last sequence number of each partition, which are to be received in this micro batch
-   * @param startOffsetsAndSeqs the starting offset/seq of each partition for next batch
-   * @param latestEndpoints the latest offset/seq of each partition
-   */
+    * return the last sequence number of each partition, which are to be received in this micro batch
+    * @param startOffsetsAndSeqs the starting offset/seq of each partition for next batch
+    * @param latestEndpoints the latest offset/seq of each partition
+    */
   private def defaultRateControl(
-      startOffsetsAndSeqs: Map[EventHubNameAndPartition, (Long, Long)],
-      latestEndpoints: Map[EventHubNameAndPartition, (Long, Long)]):
-    Map[EventHubNameAndPartition, Long] = {
+                                  startOffsetsAndSeqs: Map[EventHubNameAndPartition, (Long, Long)],
+                                  latestEndpoints: Map[EventHubNameAndPartition, (Long, Long)]):
+  Map[EventHubNameAndPartition, Long] = {
 
     latestEndpoints.map{
       case (eventHubNameAndPar, (_, latestSeq)) =>
@@ -227,9 +231,9 @@ private[eventhubs] class EventHubDirectDStream private[eventhubs] (
   }
 
   private def clamp(
-      startOffsetsAndSeqs: Map[EventHubNameAndPartition, (Long, Long)],
-      latestEndpoints: Map[EventHubNameAndPartition, (Long, Long)]):
-    Map[EventHubNameAndPartition, Long] = {
+                     startOffsetsAndSeqs: Map[EventHubNameAndPartition, (Long, Long)],
+                     latestEndpoints: Map[EventHubNameAndPartition, (Long, Long)]):
+  Map[EventHubNameAndPartition, Long] = {
 
     if (rateController.isEmpty) {
       defaultRateControl(startOffsetsAndSeqs, latestEndpoints)
@@ -265,9 +269,9 @@ private[eventhubs] class EventHubDirectDStream private[eventhubs] (
 
 
   private def validateFilteringParams(
-      eventHubsClient: EventHubClient,
-      eventhubsParams: Map[String, _],
-      ehNameAndPartitions: List[EventHubNameAndPartition]): Unit = {
+                                       eventHubsClient: EventHubClient,
+                                       eventhubsParams: Map[String, _],
+                                       ehNameAndPartitions: List[EventHubNameAndPartition]): Unit = {
     // first check if the parameters are valid
     val latestEnqueueTimeOfPartitions = eventHubsClient.lastEnqueueTimeOfPartitions(
       retryIfFail = true, ehNameAndPartitions)
@@ -291,9 +295,9 @@ private[eventhubs] class EventHubDirectDStream private[eventhubs] (
   }
 
   private def composeFromOffsetWithFilteringParams(
-      eventhubsParams: Map[String, _],
-      fetchedStartOffsetsInNextBatch: Map[EventHubNameAndPartition, (Long, Long)]):
-    Map[EventHubNameAndPartition, (EventHubsOffsetType, Long)] = {
+                                                    eventhubsParams: Map[String, _],
+                                                    fetchedStartOffsetsInNextBatch: Map[EventHubNameAndPartition, (Long, Long)]):
+  Map[EventHubNameAndPartition, (EventHubsOffsetType, Long)] = {
 
     fetchedStartOffsetsInNextBatch.map {
       case (ehNameAndPartition, (offset, seq)) =>
@@ -310,10 +314,10 @@ private[eventhubs] class EventHubDirectDStream private[eventhubs] (
   }
 
   private def calculateStartOffset(
-      ehNameAndPartition: EventHubNameAndPartition,
-      filteringOffsetAndType: Map[EventHubNameAndPartition, (EventHubsOffsetType, Long)],
-      startOffsetInNextBatch: Map[EventHubNameAndPartition, (Long, Long)]):
-    (EventHubsOffsetType, Long) = {
+                                    ehNameAndPartition: EventHubNameAndPartition,
+                                    filteringOffsetAndType: Map[EventHubNameAndPartition, (EventHubsOffsetType, Long)],
+                                    startOffsetInNextBatch: Map[EventHubNameAndPartition, (Long, Long)]):
+  (EventHubsOffsetType, Long) = {
 
     filteringOffsetAndType.getOrElse(
       ehNameAndPartition,
@@ -323,8 +327,8 @@ private[eventhubs] class EventHubDirectDStream private[eventhubs] (
   }
 
   private def composeOffsetRange(
-      startOffsetInNextBatch: OffsetRecord,
-      highestOffsets: Map[EventHubNameAndPartition, (Long, Long)]): List[OffsetRange] = {
+                                  startOffsetInNextBatch: OffsetRecord,
+                                  highestOffsets: Map[EventHubNameAndPartition, (Long, Long)]): List[OffsetRange] = {
     val clampedSeqIDs = clamp(startOffsetInNextBatch.offsets, highestOffsets)
     // to handle filter.enqueueTime and filter.offset
     val filteringOffsetAndType = {
@@ -351,10 +355,10 @@ private[eventhubs] class EventHubDirectDStream private[eventhubs] (
   }
 
   private def proceedWithNonEmptyRDD(
-      validTime: Time,
-      startOffsetInNextBatch: OffsetRecord,
-      latestOffsetOfAllPartitions: Map[EventHubNameAndPartition, (Long, Long)]):
-    Option[EventHubRDD] = {
+                                      validTime: Time,
+                                      startOffsetInNextBatch: OffsetRecord,
+                                      latestOffsetOfAllPartitions: Map[EventHubNameAndPartition, (Long, Long)]):
+  Option[EventHubRDD] = {
     // normal processing
     validatePartitions(validTime, startOffsetInNextBatch.offsets.keys.toList)
     val offsetRanges = composeOffsetRange(startOffsetInNextBatch, latestOffsetOfAllPartitions)
@@ -366,7 +370,8 @@ private[eventhubs] class EventHubDirectDStream private[eventhubs] (
       offsetRanges,
       validTime,
       OffsetStoreParams(progressDir, ssc.sparkContext.appName, this.id, eventHubNameSpace),
-      eventhubReceiverCreator)
+      eventhubReceiverCreator,
+      MdsSasTokenManager.getSasTokenContainerMap(eventhubsParams, authCertInfo))
     reportInputInto(validTime, offsetRanges,
       offsetRanges.map(ofr => ofr.untilSeq - ofr.fromSeq).sum.toInt)
     Some(eventHubRDD)
@@ -436,7 +441,7 @@ private[eventhubs] class EventHubDirectDStream private[eventhubs] (
   }
 
   private[eventhubs] class EventHubDirectDStreamCheckpointData(
-      eventHubDirectDStream: EventHubDirectDStream) extends DStreamCheckpointData(this) {
+                                                                eventHubDirectDStream: EventHubDirectDStream) extends DStreamCheckpointData(this) {
 
     def batchForTime: mutable.HashMap[Time, Array[(EventHubNameAndPartition, Long, Long, Long,
       EventHubsOffsetType)]] = {
@@ -473,7 +478,8 @@ private[eventhubs] class EventHubDirectDStream private[eventhubs] (
             OffsetRange(ehNameAndPar, fromOffset, fromSeq, untilSeq, offsetType)}.toList,
           t,
           OffsetStoreParams(progressDir, ssc.sparkContext.appName, id, eventHubNameSpace),
-          eventhubReceiverCreator)
+          eventhubReceiverCreator,
+          MdsSasTokenManager.getSasTokenContainerMap(eventhubsParams, authCertInfo))
       }
     }
   }

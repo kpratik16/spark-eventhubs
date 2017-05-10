@@ -289,6 +289,18 @@
       <artifactId>scala-xml_2.11</artifactId>
       <version>1.0.6</version>
     </dependency>
+
+    <!-- Geneva NRT dependencies -->
+    <dependency>
+      <groupId>com.microsoft.analytics</groupId>
+      <artifactId>NrtMdsServiceClient</artifactId>
+      <version>1.0</version>
+    </dependency>
+    <dependency>
+      <groupId>joda-time</groupId>
+      <artifactId>joda-time</artifactId>
+      <version>2.9.7</version>
+    </dependency>
   </dependencies>
   <build>
     <outputDirectory>target/scala-${scala.binary.version}/classes</outputDirectory>

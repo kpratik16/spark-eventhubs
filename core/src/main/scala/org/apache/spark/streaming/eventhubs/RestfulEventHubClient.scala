@@ -31,6 +31,8 @@ import scalaj.http.{Http, HttpResponse}
 
 import org.apache.spark.internal.Logging
 
+import com.microsoft.analytics.nrtmdsrestserviceclient.AuthenticationCertificateInfo
+
 /**
  * a Restful API based client of EventHub
  *
@@ -45,7 +47,10 @@ private[eventhubs] class RestfulEventHubClient(
     numPartitionsEventHubs: Map[String, Int],
     consumerGroups: Map[String, String],
     policyKeys: Map[String, Tuple2[String, String]],
-    threadNum: Int) extends EventHubClient with Logging {
+    mdsEventsCsv: Map[String,String],
+    threadNum: Int,
+    eventHubParams: Map[String, Map[String, String]],
+    authCertInfo:AuthenticationCertificateInfo) extends EventHubClient with Logging {
 
   private val RETRY_INTERVAL_SECONDS = Array(8, 16, 32, 64, 128)
 
@@ -61,6 +66,18 @@ private[eventhubs] class RestfulEventHubClient(
       s"$policyName", s"$policyKey",
       s"$eventHubNamespace.servicebus.windows.net/$eventHubName",
       Duration.ofMinutes(10))
+  }
+
+  private def retrieveSasToken(mdsEventsCsv: String):
+  String = {
+    //prkavadi
+    val mdsEventNameAndMoniker = mdsEventsCsv.split(",")(0)
+    val eventName = mdsEventNameAndMoniker.split(":")(0)
+    val moniker = mdsEventNameAndMoniker.split(":")(1)
+
+    val bcVal = MdsSasTokenManager.getSasTokenContainerMap(eventHubParams,authCertInfo)
+    val sasContainer = bcVal.getOrElse((eventName, moniker), null)
+    sasContainer.EventhubSasInfo.SharedAccessSignatureToken
   }
 
   private def fromResponseBodyToEndpoint(responseBody: String): (Long, Long) = {
@@ -104,9 +121,10 @@ private[eventhubs] class RestfulEventHubClient(
         val urlString = fromParametersToURLString(eventHubName, partitionId)
         try {
           response = Http(urlString).header("Authorization",
-            createSasToken(eventHubName,
+           /* createSasToken(eventHubName,
               policyName = policyKeys(eventHubName)._1,
-              policyKey = policyKeys(eventHubName)._2)).
+              policyKey = policyKeys(eventHubName)._2)).*/
+            retrieveSasToken(mdsEventsCsv(eventHubName))).
             header("Content-Type", "application/atom+xml;type=entry;charset=utf-8").
             timeout(connTimeoutMs = 3000, readTimeoutMs = 30000).asString
           if (response.code != 200) {
@@ -196,7 +214,8 @@ private[eventhubs] class RestfulEventHubClient(
 }
 
 private[eventhubs] object RestfulEventHubClient {
-  def getInstance(eventHubNameSpace: String, eventhubsParams: Map[String, Map[String, String]]):
+  def getInstance(eventHubNameSpace: String, eventhubsParams: Map[String, Map[String, String]],
+                  authCertInfo: AuthenticationCertificateInfo):
   RestfulEventHubClient = {
     new RestfulEventHubClient(eventHubNameSpace,
       numPartitionsEventHubs = {
@@ -212,6 +231,11 @@ private[eventhubs] object RestfulEventHubClient {
       policyKeys = eventhubsParams.map { case (eventhubName, params) => (eventhubName,
         (params("eventhubs.policyname"), params("eventhubs.policykey")))
       },
-      threadNum = 15)
+      mdsEventsCsv = eventhubsParams.map { case (eventhubName, params) => (eventhubName,
+        params("eventhubs.mdsEventsCsv"))
+      },
+      threadNum = 15,
+      eventhubsParams,
+      authCertInfo)
   }
 }

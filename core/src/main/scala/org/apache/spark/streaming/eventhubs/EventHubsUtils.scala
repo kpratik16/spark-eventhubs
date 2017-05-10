@@ -27,6 +27,8 @@ import org.apache.spark.streaming.dstream.{DStream, ReceiverInputDStream}
 import org.apache.spark.streaming.eventhubs.checkpoint.OffsetStore
 import org.apache.spark.streaming.receiver.Receiver
 
+import com.microsoft.analytics.nrtmdsrestserviceclient.AuthenticationCertificateInfo
+
 
 object EventHubsUtils {
 
@@ -112,8 +114,9 @@ object EventHubsUtils {
       ssc: StreamingContext,
       eventHubNamespace: String,
       progressDir: String,
-      eventParams: Predef.Map[String, Predef.Map[String, String]]): EventHubDirectDStream = {
-    val newStream = new EventHubDirectDStream(ssc, eventHubNamespace, progressDir, eventParams)
+      eventParams: Predef.Map[String, Predef.Map[String, String]],
+      authCertInfo: AuthenticationCertificateInfo): EventHubDirectDStream = {
+    val newStream = new EventHubDirectDStream(ssc, eventHubNamespace, progressDir, eventParams, authCertInfo)
     newStream
   }
 

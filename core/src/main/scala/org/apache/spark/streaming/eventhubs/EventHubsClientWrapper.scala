@@ -29,6 +29,9 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.streaming.eventhubs.EventHubsOffsetTypes._
 import org.apache.spark.streaming.eventhubs.checkpoint.OffsetStore
 
+import java.net.URI
+import com.microsoft.analytics.nrtmdsrestserviceclient.EventHubSasInfoContainer
+
 /**
  * Wraps a raw EventHubReceiver to make it easier for unit tests
  */
@@ -72,7 +75,10 @@ private[eventhubs] class EventHubsClientWrapper extends Serializable with EventH
     // Set the epoch if specified
     val receiverEpoch = eventhubsParams.getOrElse("eventhubs.epoch",
       DEFAULT_RECEIVER_EPOCH.toString).toLong
-    (connectionString, consumerGroup, receiverEpoch)
+
+    //NRT Analytics Specific
+    val sasToken = eventhubsParams.getOrElse("eventhubs.sastoken", null)
+    (connectionString, consumerGroup, receiverEpoch, sasToken)
   }
 
   private def configureStartOffset(
@@ -101,25 +107,25 @@ private[eventhubs] class EventHubsClientWrapper extends Serializable with EventH
       startOffset: String,
       offsetType: EventHubsOffsetType,
       maximumEventRate: Int): Unit = {
-    val (connectionString, consumerGroup, receiverEpoch) = configureGeneralParameters(
+    val (connectionString, consumerGroup, receiverEpoch, sasToken) = configureGeneralParameters(
       eventhubsParams)
     val currentOffset = startOffset
     MAXIMUM_EVENT_RATE = configureMaxEventRate(maximumEventRate)
     createReceiverInternal(connectionString.toString, consumerGroup, partitionId, offsetType,
-      currentOffset, receiverEpoch)
+      currentOffset, receiverEpoch, sasToken)
   }
 
   def createReceiver(eventhubsParams: Map[String, String],
                      partitionId: String,
                      offsetStore: OffsetStore,
                      maximumEventRate: Int): Unit = {
-    val (connectionString, consumerGroup, receiverEpoch) = configureGeneralParameters(
+    val (connectionString, consumerGroup, receiverEpoch, sasToken) = configureGeneralParameters(
       eventhubsParams)
     val (offsetType, currentOffset) = configureStartOffset(eventhubsParams, offsetStore)
     logInfo(s"start a receiver for partition $partitionId with the start offset $currentOffset")
     MAXIMUM_EVENT_RATE = configureMaxEventRate(maximumEventRate)
     createReceiverInternal(connectionString.toString, consumerGroup, partitionId, offsetType,
-      currentOffset, receiverEpoch)
+      currentOffset, receiverEpoch, sasToken)
   }
 
   private[eventhubs] def createReceiverInternal(
@@ -128,7 +134,8 @@ private[eventhubs] class EventHubsClientWrapper extends Serializable with EventH
       partitionId: String,
       offsetType: EventHubsOffsetType,
       currentOffset: String,
-      receiverEpoch: Long): Unit = {
+      receiverEpoch: Long,
+      sasToken: String): Unit = {
     // Create Eventhubs client
     eventhubsClient = EventHubClient.createFromConnectionStringSync(connectionString)
 
@@ -158,6 +165,20 @@ private[eventhubs] class EventHubsClientWrapper extends Serializable with EventH
     eventhubsReceiver.setPrefetchCount(MAXIMUM_PREFETCH_COUNT)
   }
 
+  private[eventhubs] def buildConnectionStringFromEventhubSasInfo(eventhubSasInfo: EventHubSasInfoContainer):
+  String ={
+    //Connection String Format: Endpoint=<scheme>://<authority>;EntityPath=<path..trim front forward slash>;<sas>;OperationTimeout=PT1M;RetryPolicy=Default";
+    //Sample Connection String: Endpoint=sb://s360aicosmos.servicebus.windows.net;EntityPath=raw;SharedAccessSignature=SharedAccessSignature sr=sb%3a%2f%2fs360aicosmos.servicebus.windows.net%2fraw%2f&sig=<sig>%3d&se=1487229033&skn=reader;OperationTimeout=PT1M;RetryPolicy=Default";
+
+    var eventhubUri = new URI(eventhubSasInfo.ResourceUri)
+    var scheme = eventhubUri.getScheme()
+    var authority = eventhubUri.getAuthority()
+    var path = eventhubUri.getPath().substring(1)
+    var sasToken = eventhubSasInfo.SharedAccessSignatureToken
+    var connectionString = s"Endpoint=$scheme://$authority;EntityPath=$path;SharedAccessSignature=$sasToken;OperationTimeout=PT1M;RetryPolicy=Default"
+    connectionString
+  }
+
   /**
    * starting from EventHubs client 0.13.1, returning a null from receiver means that there is
    * no message in server end
@@ -183,9 +204,7 @@ private[eventhubs] class EventHubsClientWrapper extends Serializable with EventH
   def receive(expectedEventNum: Int): Iterable[EventData] = {
     val events = eventhubsReceiver.receive(
       math.min(expectedEventNum, eventhubsReceiver.getPrefetchCount)).get()
-    if (events == null) {
-      Iterable.empty
-    }
+    if (events == null) Iterable.empty
     else {
       partitionRuntimeInformation = eventhubsReceiver.getRuntimeInformation
       events.asScala
